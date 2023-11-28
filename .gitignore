@@ -1,2 +1,5 @@
 # ignore all build directories
 */build
+
+# ignore IDE files
+.vscode
