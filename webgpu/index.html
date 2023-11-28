@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>WebGPU</title>
+</head>
+
+<body>
+    <canvas width="512" height="512"></canvas>
+    <script type="module">
+        // Setup
+        const canvas = document.querySelector("canvas");
+        const canvasFormat = navigator.gpu.getPreferredCanvasFormat();
+        const physicalDevice = await navigator.gpu.requestAdapter();
+        const logicalDevice = await physicalDevice.requestDevice();
+        const context = canvas.getContext("webgpu");
+        context.configure({
+            device: logicalDevice,
+            format: canvasFormat,
+        });
+        const encoder = logicalDevice.createCommandEncoder();
+        // Create triangle data
+        const vertices = new Float32Array([
+            -0.5, -0.5, 1, 0, 0,
+            0, 0.25, 0, 1, 0,
+            0.5, -0.5, 0, 0, 1,
+        ]);
+        const vertexBuffer = logicalDevice.createBuffer({
+            label: "Triangle Vertices",
+            size: vertices.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        logicalDevice.queue.writeBuffer(vertexBuffer, 0, vertices);
+        const vertexBufferLayout = {
+            arrayStride: 20,
+            attributes: [
+                {
+                    format: "float32x2",
+                    offset: 0,
+                    shaderLocation: 0,
+                },
+                {
+                    format: "float32x3",
+                    offset: 8,
+                    shaderLocation: 1,
+                }
+            ],
+        };
+        const shader = logicalDevice.createShaderModule({
+            label: "triangle shader",
+            code: `
+                struct VertexOutput {
+                    @builtin(position) position: vec4f,
+                    @location(0) color: vec3f,
+                };
+                @vertex
+                fn vertexMain(@location(0) pos: vec2f, @location(1) color: vec3f) -> VertexOutput {
+                    var out: VertexOutput;
+                    out.position = vec4f(pos, 1, 1);
+                    out.color = color;
+                    return out;
+                }
+                @fragment
+                fn fragmentMain(in: VertexOutput) -> @location(0) vec4f {
+                    return vec4f(in.color, 1);
+                }
+                `
+        });
+        const renderPipeline = logicalDevice.createRenderPipeline({
+            label: "Render Pipeline",
+            layout: "auto",
+            vertex: {
+                module: shader,
+                entryPoint: "vertexMain",
+                buffers: [vertexBufferLayout]
+            },
+            fragment: {
+                module: shader,
+                entryPoint: "fragmentMain",
+                targets: [{
+                    format: canvasFormat
+                }]
+            }
+        });
+
+        // Rendering
+        const pass = encoder.beginRenderPass({
+            colorAttachments: [{
+                view: context.getCurrentTexture().createView(),
+                loadOp: "clear",
+                storeOp: "store",
+            }]
+        });
+        pass.setPipeline(renderPipeline);
+        pass.setVertexBuffer(0, vertexBuffer);
+        pass.draw(vertices.length / 5);
+        pass.end();
+        logicalDevice.queue.submit([encoder.finish()]);
+    </script>
+</body>
+
+</html>
